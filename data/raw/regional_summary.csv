@@ -1,0 +1,8 @@
+geographic_region,mean_temperature_celsius,min_temperature_celsius,max_temperature_celsius,std_temperature_celsius,mean_latitude,mean_longitude,nunique_normalized_country,mean_humidity,std_humidity,mean_pressure_mb,std_pressure_mb
+Africa,26.2,3.4,47.1,4.9,1.55,17.85,52,58.83,23.63,1015.35,5.18
+Asia,25.52,-24.9,49.2,10.1,26.86,75.83,47,51.77,25.09,1010.75,14.43
+Caribbean,26.06,9.3,35.3,2.94,16.59,-66.9,13,82.75,9.43,1014.05,2.57
+Europe,16.58,-11.8,41.4,9.41,48.06,13.83,44,64.13,20.36,1016.13,8.59
+North America,18.5,-21.8,32.0,7.23,20.36,-90.29,10,87.37,12.23,1016.0,28.67
+Oceania,24.28,-3.7,32.1,5.82,-11.88,111.27,13,83.5,10.07,1011.98,4.82
+South America,18.01,-1.7,33.3,6.88,-12.28,-64.39,12,81.21,16.54,1014.24,4.59

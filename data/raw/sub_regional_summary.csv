@@ -1,0 +1,20 @@
+geographic_region,sub_region,temperature_celsius,latitude,longitude,normalized_country,humidity
+Africa,Central Africa,27.3,6.27,11.07,31,65.73
+Africa,Eastern Africa,26.22,-16.11,46.09,4,55.72
+Africa,Northern Africa,25.28,26.65,13.3,8,50.73
+Africa,Southern Africa,23.34,-22.4,29.8,8,44.74
+Africa,Western Africa,24.71,-15.7,15.16,2,50.91
+Asia,East Asia,16.85,40.02,123.16,5,58.39
+Asia,Northern Asia,12.88,53.54,54.36,2,60.61
+Asia,South & Southeast Asia,28.25,12.04,101.27,16,68.46
+Asia,Western & Central Asia,26.3,32.42,50.98,24,38.38
+Caribbean,Caribbean,26.06,16.59,-66.9,13,82.75
+Europe,Eastern Europe,14.54,52.55,19.1,16,65.82
+Europe,Northern Europe,9.47,61.82,2.23,2,76.39
+Europe,Southern Europe,20.5,41.52,15.54,18,56.13
+Europe,Western Europe,13.88,50.18,3.58,8,74.53
+North America,Central America,20.94,13.78,-88.05,9,87.44
+North America,Northern North America,8.72,46.72,-99.24,2,87.07
+Oceania,Oceania,24.28,-11.88,111.27,13,83.5
+South America,Northern South America,21.56,4.18,-63.38,6,85.91
+South America,Southern South America,15.48,-24.03,-65.11,7,77.86

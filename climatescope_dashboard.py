@@ -14,8 +14,9 @@ from plotly.subplots import make_subplots
 import dash
 from dash import dcc, html, Input, Output, callback, State
 import dash_bootstrap_components as dbc
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
+from scipy import stats
 
 # Performance optimization: Set pandas options
 pd.options.mode.chained_assignment = None
@@ -719,6 +720,43 @@ app.layout = html.Div([
         ], width=6)
     ], className="mb-4"),
     
+    # NEW VISUALS SECTION: EXTREME WEATHER EVENTS
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.Div([
+                        html.H6("🔥 Extreme Weather Events", className="mb-0", style={'color': 'white', 'fontWeight': 'bold'}),
+                        html.Div([
+                            html.Label("Metric:", style={'font-size': '0.8em', 'color': 'white', 'marginRight': '8px'}),
+                            dcc.Dropdown(
+                                id='extreme-metric-dropdown',
+                                options=[
+                                    {'label': 'Temperature', 'value': 'temperature_celsius'},
+                                    {'label': 'Humidity', 'value': 'humidity'},
+                                    {'label': 'Wind Speed', 'value': 'wind_speed'}
+                                ],
+                                value='temperature_celsius',
+                                clearable=False,
+                                style={'font-size': '0.8em', 'width': '120px'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center'})
+                ], id='extreme-header', style={'background': 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)', 'border': 'none'}),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            dcc.Graph(id='extreme-events-chart', config={'displayModeBar': False})
+                        ], width=8),
+                        dbc.Col([
+                            html.Div(id='extreme-events-table')
+                        ], width=4)
+                    ])
+                ])
+            ], id='extreme-card', style={'border': 'none', 'boxShadow': '0 4px 15px rgba(0,0,0,0.1)'})
+        ], width=12)
+    ], className="mb-4"),
+    
     # Download component for report only
     dcc.Download(id="download-report"),
     
@@ -1218,12 +1256,10 @@ def update_visualizations(start_date, end_date, single_date, date_mode, selected
             x='year_month',
             y=selected_metric,
             title=f"{metric_labels[selected_metric]} Trend Over Time",
-            markers=True
+            color_discrete_sequence=[line_color]
         )
         time_series.update_layout(
-            xaxis_title="Date",
-            yaxis_title=metric_labels[selected_metric],
-            height=400,
+            height=300,
             margin=dict(l=0, r=0, t=40, b=0),
             plot_bgcolor=plot_bg,
             paper_bgcolor=paper_bg,
@@ -2156,6 +2192,375 @@ Based on the current analysis:
 """
     
     return report
+
+# NEW CALLBACK FOR EXTREME EVENTS
+
+@app.callback(
+    [Output('extreme-events-chart', 'figure'),
+     Output('extreme-events-table', 'children')],
+    [Input('extreme-metric-dropdown', 'value'),
+     Input('region-dropdown', 'value'),
+     Input('country-dropdown', 'value'),
+     Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date'),
+     Input('theme-store', 'data')]
+)
+def update_extreme_events(metric, selected_regions, selected_countries, start_date, end_date, theme_data):
+    """Create simple extreme weather events showing highest and lowest values"""
+    try:
+        # Filter data
+        filtered_df = df.copy()
+        
+        if selected_regions:
+            filtered_df = filtered_df[filtered_df['geographic_region'].isin(selected_regions)]
+        if selected_countries:
+            filtered_df = filtered_df[filtered_df['normalized_country'].isin(selected_countries)]
+        if start_date and end_date:
+            filtered_df = filtered_df[
+                (filtered_df['date'] >= pd.to_datetime(start_date).date()) &
+                (filtered_df['date'] <= pd.to_datetime(end_date).date())
+            ]
+        
+        if filtered_df.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No data available", 
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            table = html.Div("No data available", style={'textAlign': 'center', 'padding': '20px'})
+            return fig, table
+        
+        # Remove any null values for the selected metric
+        filtered_df = filtered_df.dropna(subset=[metric])
+        
+        if len(filtered_df) < 10:
+            fig = go.Figure()
+            fig.add_annotation(text="Need at least 10 records", 
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            table = html.Div("Insufficient data", style={'textAlign': 'center', 'padding': '20px'})
+            return fig, table
+        
+        # Get top 5 highest and top 5 lowest values - SIMPLE!
+        highest_values = filtered_df.nlargest(5, metric).copy()
+        lowest_values = filtered_df.nsmallest(5, metric).copy()
+        
+        # Add simple labels
+        highest_values['location_label'] = highest_values['normalized_country'] + ' (' + highest_values['date'].astype(str) + ')'
+        lowest_values['location_label'] = lowest_values['normalized_country'] + ' (' + lowest_values['date'].astype(str) + ')'
+        
+        # Theme setup
+        is_dark = False
+        if isinstance(theme_data, dict):
+            is_dark = theme_data.get('theme') == 'dark'
+        elif isinstance(theme_data, str):
+            is_dark = theme_data == 'dark'
+        
+        bg_color = '#2c3e50' if is_dark else '#ffffff'
+        font_color = '#ffffff' if is_dark else '#000000'
+        
+        # Create simple horizontal bar chart
+        fig = go.Figure()
+        
+        # Add highest values (red/hot colors)
+        fig.add_trace(go.Bar(
+            y=[f"🔥 #{i+1} {row['location_label']}" for i, (_, row) in enumerate(highest_values.iterrows())],
+            x=highest_values[metric],
+            orientation='h',
+            name=f'🔥 Highest {metric_labels[metric]}',
+            marker=dict(color='#e74c3c'),
+            text=[f"{val:.1f}" for val in highest_values[metric]],
+            textposition='auto',
+            hovertemplate='<b>%{y}</b><br>' + f'{metric_labels[metric]}: %{{x:.1f}}<extra></extra>'
+        ))
+        
+        # Add lowest values (blue/cool colors)
+        fig.add_trace(go.Bar(
+            y=[f"🧊 #{i+1} {row['location_label']}" for i, (_, row) in enumerate(lowest_values.iterrows())],
+            x=lowest_values[metric],
+            orientation='h',
+            name=f'🧊 Lowest {metric_labels[metric]}',
+            marker=dict(color='#3498db'),
+            text=[f"{val:.1f}" for val in lowest_values[metric]],
+            textposition='auto',
+            hovertemplate='<b>%{y}</b><br>' + f'{metric_labels[metric]}: %{{x:.1f}}<extra></extra>'
+        ))
+        
+        # Simple stats for title
+        overall_max = filtered_df[metric].max()
+        overall_min = filtered_df[metric].min()
+        overall_avg = filtered_df[metric].mean()
+        
+        fig.update_layout(
+            title=f"🔥 Highest & 🧊 Lowest {metric_labels[metric]} Values<br>" +
+                  f"<sub>Range: {overall_min:.1f} to {overall_max:.1f} | Average: {overall_avg:.1f}</sub>",
+            xaxis_title=metric_labels[metric],
+            yaxis_title="",
+            plot_bgcolor=bg_color,
+            paper_bgcolor=bg_color,
+            font_color=font_color,
+            height=500,
+            margin=dict(l=20, r=20, t=80, b=40),
+            showlegend=True,
+            legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99)
+        )
+        
+        # Simple table
+        table_rows = []
+        
+        # Add highest values to table
+        for i, (_, row) in enumerate(highest_values.iterrows(), 1):
+            table_rows.append(
+                html.Tr([
+                    html.Td(f"🔥 #{i}", style={'fontSize': '0.8rem', 'fontWeight': 'bold', 'color': '#e74c3c'}),
+                    html.Td(str(row['date']), style={'fontSize': '0.8rem'}),
+                    html.Td(row['normalized_country'][:20], style={'fontSize': '0.8rem'}),
+                    html.Td(f"{row[metric]:.1f}", style={'fontSize': '0.8rem', 'fontWeight': 'bold'})
+                ])
+            )
+        
+        # Add lowest values to table
+        for i, (_, row) in enumerate(lowest_values.iterrows(), 1):
+            table_rows.append(
+                html.Tr([
+                    html.Td(f"🧊 #{i}", style={'fontSize': '0.8rem', 'fontWeight': 'bold', 'color': '#3498db'}),
+                    html.Td(str(row['date']), style={'fontSize': '0.8rem'}),
+                    html.Td(row['normalized_country'][:20], style={'fontSize': '0.8rem'}),
+                    html.Td(f"{row[metric]:.1f}", style={'fontSize': '0.8rem', 'fontWeight': 'bold'})
+                ])
+            )
+        
+        table = html.Div([
+            html.H6("📊 Extreme Values", style={'marginBottom': '10px', 'fontSize': '0.9rem', 'fontWeight': 'bold'}),
+            html.P(f"Top 5 highest and lowest {metric_labels[metric].lower()} readings", 
+                  style={'fontSize': '0.8rem', 'marginBottom': '15px'}),
+            html.Table([
+                html.Thead([
+                    html.Tr([
+                        html.Th("Rank", style={'fontSize': '0.8rem', 'backgroundColor': '#f8f9fa'}),
+                        html.Th("Date", style={'fontSize': '0.8rem', 'backgroundColor': '#f8f9fa'}),
+                        html.Th("Location", style={'fontSize': '0.8rem', 'backgroundColor': '#f8f9fa'}),
+                        html.Th("Value", style={'fontSize': '0.8rem', 'backgroundColor': '#f8f9fa'})
+                    ])
+                ]),
+                html.Tbody(table_rows)
+            ], className="table table-sm table-hover", style={'fontSize': '0.8rem'})
+        ])
+        
+        return fig, table
+        
+    except Exception as e:
+        print(f"Extreme events error: {str(e)}")
+        
+        # Simple error display
+        fig = go.Figure()
+        fig.add_annotation(text=f"Error: {str(e)[:50]}...", xref="paper", yref="paper",
+                          x=0.5, y=0.5, showarrow=False, font=dict(size=12, color="red"))
+        
+        is_dark = False
+        if isinstance(theme_data, dict):
+            is_dark = theme_data.get('theme') == 'dark'
+        elif isinstance(theme_data, str):
+            is_dark = theme_data == 'dark'
+            
+        bg_color = '#2c3e50' if is_dark else '#ffffff'
+        font_color = '#ffffff' if is_dark else '#000000'
+        
+        fig.update_layout(plot_bgcolor=bg_color, paper_bgcolor=bg_color, 
+                         font_color=font_color, height=400)
+        
+        error_table = html.Div(f"Error: {str(e)}", style={'textAlign': 'center', 'color': 'red'})
+        return fig, error_table
+        
+        if len(filtered_df) < 10:
+            fig = go.Figure()
+            fig.add_annotation(text="Insufficient data for extreme events analysis (need at least 10 records)", 
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            table = html.Div("Insufficient data", style={'textAlign': 'center', 'padding': '20px'})
+            return fig, table
+        
+        # Calculate extreme values (mean + 2*std for highs, mean - 2*std for lows)
+        mean_val = filtered_df[metric].mean()
+        std_val = filtered_df[metric].std()
+        
+        # Define thresholds
+        high_threshold = mean_val + 2 * std_val
+        low_threshold = mean_val - 2 * std_val
+        
+        # Find extreme events (both high and low)
+        extreme_high = filtered_df[filtered_df[metric] > high_threshold].copy()
+        extreme_low = filtered_df[filtered_df[metric] < low_threshold].copy()
+        
+        # Combine and prioritize most extreme values
+        if len(extreme_high) >= 5:
+            extreme_df = extreme_high.nlargest(10, metric)
+            event_type = "Extreme High"
+        elif len(extreme_low) >= 5:
+            extreme_df = extreme_low.nsmallest(10, metric)
+            event_type = "Extreme Low"
+        else:
+            # If not enough extreme values, take the most extreme from both ends
+            top_high = extreme_high.nlargest(5, metric) if len(extreme_high) > 0 else pd.DataFrame()
+            top_low = extreme_low.nsmallest(5, metric) if len(extreme_low) > 0 else pd.DataFrame()
+            extreme_df = pd.concat([top_high, top_low])
+            
+            if extreme_df.empty:
+                # Fallback: take top 10 highest and lowest values
+                top_values = filtered_df.nlargest(5, metric)
+                bottom_values = filtered_df.nsmallest(5, metric)
+                extreme_df = pd.concat([top_values, bottom_values])
+                event_type = "Most Extreme"
+            else:
+                event_type = "Mixed Extreme"
+        
+        # Calculate deviation from mean
+        extreme_df = extreme_df.copy()
+        extreme_df['deviation'] = extreme_df[metric] - mean_val
+        extreme_df['abs_deviation'] = abs(extreme_df['deviation'])
+        
+        # Sort by absolute deviation to get most extreme first
+        extreme_df = extreme_df.sort_values('abs_deviation', ascending=False).head(10)
+        
+        # Create location labels
+        extreme_df['location_label'] = extreme_df['normalized_country'] + ' (' + extreme_df['date'].astype(str) + ')'
+        
+        # Theme setup
+        is_dark = theme_data.get('theme') == 'dark'
+        bg_color = '#2c3e50' if is_dark else '#ffffff'
+        font_color = '#ffffff' if is_dark else '#000000'
+        
+        # Create horizontal bar chart
+        fig = go.Figure()
+        
+        # Choose colors based on metric and values
+        if metric == 'temperature_celsius':
+            # Red for hot, blue for cold
+            colors = ['#d63031' if dev > 0 else '#0984e3' for dev in extreme_df['deviation']]
+        else:
+            # Use a sequential color scale for other metrics
+            colors = px.colors.sequential.Viridis[::2]  # Every other color for variety
+            if len(colors) < len(extreme_df):
+                colors = colors * (len(extreme_df) // len(colors) + 1)
+            colors = colors[:len(extreme_df)]
+        
+        # Add bars
+        fig.add_trace(go.Bar(
+            y=extreme_df['location_label'],
+            x=extreme_df['deviation'],
+            orientation='h',
+            marker=dict(color=colors),
+            text=[f"{val:.1f}" for val in extreme_df[metric]],
+            textposition='auto',
+            hovertemplate=(
+                '<b>%{y}</b><br>' +
+                f'{metric_labels[metric]}: %{{customdata[0]:.1f}}<br>' +
+                'Deviation: %{x:.1f}<br>' +
+                'Date: %{customdata[1]}<br>' +
+                '<extra></extra>'
+            ),
+            customdata=extreme_df[[metric, 'date']].values
+        ))
+        
+        fig.update_layout(
+            title=f"Top 10 {event_type} {metric_labels[metric]} Events<br>" +
+                  f"<sub>Mean: {mean_val:.1f} | Std: {std_val:.1f}</sub>",
+            xaxis_title="Deviation from Mean",
+            yaxis_title="",
+            plot_bgcolor=bg_color,
+            paper_bgcolor=bg_color,
+            font_color=font_color,
+            height=500,
+            margin=dict(l=20, r=20, t=80, b=40),
+            showlegend=False
+        )
+        
+        # Style the axes
+        fig.update_xaxes(
+            showgrid=True,
+            gridcolor="rgba(128,128,128,0.2)",
+            showline=True,
+            linecolor=font_color,
+            zeroline=True,
+            zerolinecolor="rgba(128,128,128,0.5)",
+            zerolinewidth=2
+        )
+        fig.update_yaxes(
+            showgrid=False,
+            showline=True,
+            linecolor=font_color
+        )
+        
+        # Create enhanced summary table
+        table_data = extreme_df.head(8)  # Show top 8 in table
+        table_rows = []
+        
+        for _, row in table_data.iterrows():
+            deviation_color = '#d63031' if row['deviation'] > 0 else '#0984e3'
+            deviation_symbol = '↗️' if row['deviation'] > 0 else '↘️'
+            
+            table_rows.append(
+                html.Tr([
+                    html.Td(str(row['date']), style={'fontSize': '0.75rem', 'padding': '5px'}),
+                    html.Td(row['normalized_country'][:15] + ('...' if len(row['normalized_country']) > 15 else ''), 
+                           style={'fontSize': '0.75rem', 'padding': '5px'}),
+                    html.Td(f"{row[metric]:.1f}", style={'fontSize': '0.75rem', 'padding': '5px', 'fontWeight': 'bold'}),
+                    html.Td([
+                        deviation_symbol, 
+                        f" {row['deviation']:+.1f}"
+                    ], style={'fontSize': '0.75rem', 'padding': '5px', 'color': deviation_color, 'fontWeight': 'bold'})
+                ])
+            )
+        
+        table = html.Div([
+            html.H6("📊 Extreme Events Summary", style={'marginBottom': '10px', 'fontSize': '0.9rem', 'fontWeight': 'bold'}),
+            html.P(f"Analysis of {len(extreme_df)} extreme events", style={'fontSize': '0.8rem', 'marginBottom': '15px'}),
+            html.Table([
+                html.Thead([
+                    html.Tr([
+                        html.Th("Date", style={'fontSize': '0.8rem', 'padding': '8px', 'backgroundColor': '#f8f9fa'}),
+                        html.Th("Location", style={'fontSize': '0.8rem', 'padding': '8px', 'backgroundColor': '#f8f9fa'}),
+                        html.Th("Value", style={'fontSize': '0.8rem', 'padding': '8px', 'backgroundColor': '#f8f9fa'}),
+                        html.Th("Deviation", style={'fontSize': '0.8rem', 'padding': '8px', 'backgroundColor': '#f8f9fa'})
+                    ])
+                ]),
+                html.Tbody(table_rows)
+            ], className="table table-sm table-hover", style={'fontSize': '0.8rem'})
+        ], style={'maxHeight': '400px', 'overflowY': 'auto'})
+        
+        return fig, table
+        
+    except Exception as e:
+        print(f"Extreme events error: {str(e)}")
+        
+        # Create error figure
+        fig = go.Figure()
+        fig.add_annotation(
+            text=f"Error creating extreme events chart: {str(e)[:100]}...",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(size=12, color="red"),
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="red",
+            borderwidth=1
+        )
+        
+        # Set basic layout for error display
+        is_dark = False
+        if isinstance(theme_data, dict):
+            is_dark = theme_data.get('theme') == 'dark'
+        elif isinstance(theme_data, str):
+            is_dark = theme_data == 'dark'
+            
+        bg_color = '#2c3e50' if is_dark else '#ffffff'
+        font_color = '#ffffff' if is_dark else '#000000'
+        
+        fig.update_layout(
+            plot_bgcolor=bg_color,
+            paper_bgcolor=bg_color,
+            font_color=font_color,
+            height=400
+        )
+        
+        error_table = html.Div(f"Error: {str(e)}", style={'textAlign': 'center', 'padding': '20px', 'color': 'red'})
+        return fig, error_table
 
 # Run the app
 if __name__ == '__main__':
